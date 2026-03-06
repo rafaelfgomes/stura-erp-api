@@ -2,7 +2,7 @@ services:
   stura-erp-db:
     image: postgres:16.13-alpine
     container_name: stura-db
-    restart: unless-stopped
+    restart: always
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
@@ -22,7 +22,7 @@ services:
   stura-erp-redis:
     image: redis:8.6.1-alpine
     container_name: stura-erp-redis
-    restart: unless-stopped
+    restart: always
     volumes:
       - redis_data:/data
     ports:
@@ -32,6 +32,21 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      net:
+
+  stura-erp-pgadmin:
+    image: elastio/pgadmin
+    container_name: stura-erp-pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-pgadmin@stura-erp.api}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-pgadmin}
+      PGADMIN_LISTEN_PORT: 8080
+    ports:
+      - "${PGADMIN_PORT:-8080}:8080"
+    depends_on:
+      - stura-erp-db
     networks:
       net:
 
