@@ -36,9 +36,11 @@ services:
       net:
 
   stura-erp-pgadmin:
-    image: elastio/pgadmin
+    image: dpage/pgadmin4
     container_name: stura-erp-pgadmin
     restart: always
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-pgadmin@stura-erp.api}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-pgadmin}
@@ -46,14 +48,15 @@ services:
     ports:
       - "${PGADMIN_PORT:-8080}:8080"
     depends_on:
-      - stura-erp-db
+      stura-erp-db:
+        condition: service_healthy
     networks:
       net:
 
   stura-erp-api:
     build:
       context: .
-      dockerfile: Dockerfile.dev
+      dockerfile: ./docker/php/Dockerfile.dev
       args:
         UID: ${UID:-1000}
         GID: ${GID:-1000}
@@ -74,36 +77,36 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
     depends_on:
-      postgres:
+      stura-erp-db:
         condition: service_healthy
-      redis:
+      stura-erp-redis:
         condition: service_healthy
     networks:
       net:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
-  stura-erp-worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.dev
-    container_name: stura-erp-worker
-    restart: unless-stopped
-    command: php artisan queue:work --sleep=3 --tries=3 --max-time=3600
-    volumes:
-      - ./api:/var/www/html
-      - /var/www/html/vendor
-    environment:
-      APP_ENV: ${APP_ENV:-local}
-      DB_HOST: stura-erp-db
-      DB_USERNAME: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      DB_DATABASE: ${DB_NAME}
-      REDIS_HOST: stura-erp-redis
-    depends_on:
-      - stura-erp-api
-    networks:
-      net:
+  # stura-erp-worker:
+  #   build:
+  #     context: .
+  #     dockerfile: ./docker/php/Dockerfile.dev
+  #   container_name: stura-erp-worker
+  #   restart: unless-stopped
+  #   command: php artisan queue:work --sleep=3 --tries=3 --max-time=3600
+  #   volumes:
+  #     - ./api:/var/www/html
+  #     - /var/www/html/vendor
+  #   environment:
+  #     APP_ENV: ${APP_ENV:-local}
+  #     DB_HOST: stura-erp-db
+  #     DB_USERNAME: ${DB_USER}
+  #     DB_PASSWORD: ${DB_PASSWORD}
+  #     DB_DATABASE: ${DB_NAME}
+  #     REDIS_HOST: stura-erp-redis
+  #   depends_on:
+  #     - stura-erp-api
+  #   networks:
+  #     net:
 
   stura-erp-webserver:
     image: nginx:1.25-alpine
@@ -116,8 +119,7 @@ services:
       - ./docker/nginx/api-dev.conf:/etc/nginx/conf.d/default.conf
       - ./docker/nginx/logs:/var/log/nginx
     depends_on:
-      stura-erp-api:
-        condition: service_healthy
+      - stura-erp-api
     networks:
       net:
 
@@ -126,6 +128,8 @@ volumes:
     name: stura-erp-db-data
   redis_data:
     name: stura-erp-redis-data
+  pgadmin_data:
+    name: stura-erp-pgadmin-data
 
 networks:
   net:
