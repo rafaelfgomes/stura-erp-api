@@ -1,1 +1,1 @@
-# stura-erp-api
+# Stura ERP (API)

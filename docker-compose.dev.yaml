@@ -1,0 +1,117 @@
+services:
+  stura-erp-db:
+    image: postgres:16.13-alpine
+    container_name: stura-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      net:
+
+  stura-erp-redis:
+    image: redis:8.6.1-alpine
+    container_name: stura-erp-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      net:
+
+  stura-erp-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+        TIMEZONE: ${TIMEZONE:-UTC}
+    container_name: stura-erp-api
+    restart: unless-stopped
+    volumes:
+      - ./api:/var/www/html                  # Hot reload — código montado
+      - /var/www/html/vendor             # Vendor não sobrescreve
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      APP_DEBUG: true
+      DB_HOST: stura-erp-db
+      DB_PORT: 5432
+      DB_DATABASE: ${DB_NAME}
+      DB_USERNAME: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      net:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  stura-erp-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: stura-erp-worker
+    restart: unless-stopped
+    command: php artisan queue:work --sleep=3 --tries=3 --max-time=3600
+    volumes:
+      - ./api:/var/www/html
+      - /var/www/html/vendor
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      DB_HOST: stura-erp-db
+      DB_USERNAME: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_DATABASE: ${DB_NAME}
+      REDIS_HOST: stura-erp-redis
+    depends_on:
+      - stura-erp-api
+    networks:
+      net:
+
+  stura-erp-webserver:
+    image: nginx:1.25-alpine
+    container_name: stura-erp-webserver
+    restart: unless-stopped
+    ports:
+      - "${NGINX_API_PORT:-8000}:80"
+    volumes:
+      - ./api:/var/www/html
+      - ./docker/nginx/api-dev.conf:/etc/nginx/conf.d/default.conf
+      - ./docker/nginx/logs:/var/log/nginx
+    depends_on:
+      stura-erp-api:
+        condition: service_healthy
+    networks:
+      net:
+
+volumes:
+  postgres_data:
+    name: stura-erp-db-data
+  redis_data:
+    name: stura-erp-redis-data
+
+networks:
+  net:
+    name: stura-erp-network

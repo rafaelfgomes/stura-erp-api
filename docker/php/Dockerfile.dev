@@ -1,0 +1,66 @@
+FROM php:8.3.30-fpm-alpine
+
+ARG UID=1000
+ARG GID=1000
+ARG TIMEZONE=UTC
+
+RUN apk add --no-cache \
+    linux-headers \
+    libpng-dev \
+    libjpeg-turbo-dev \
+    libwebp-dev \
+    freetype-dev \
+    libzip-dev \
+    postgresql-dev \
+    oniguruma-dev \
+    git \
+    curl \
+    unzip \
+    $PHPIZE_DEPS
+
+RUN docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp && \
+    docker-php-ext-install \
+        pdo \
+        pdo_pgsql \
+        mbstring \
+        zip \
+        gd \
+        bcmath \
+        pcntl
+
+RUN pecl install redis xdebug && \
+    docker-php-ext-enable redis xdebug && \
+    apk del --no-cache $PHPIZE_DEPS && \
+    rm -rf /var/cache/apk/* /tmp/pear
+
+COPY --from=composer /usr/bin/composer /usr/bin/composer
+
+RUN echo "xdebug.mode=debug" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini && \
+    echo "xdebug.start_with_request=yes" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini && \
+    echo "xdebug.client_host=host.docker.internal" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini && \
+    echo "xdebug.client_port=9003" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini && \
+    echo "xdebug.log=/tmp/xdebug.log" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini
+
+RUN { \
+    echo 'opcache.memory_consumption=128'; \
+    echo 'opcache.interned_strings_buffer=8'; \
+    echo 'opcache.max_accelerated_files=4000'; \
+    echo 'opcache.revalidate_freq=2'; \
+    echo 'opcache.fast_shutdown=1'; \
+    echo 'opcache.enable_cli=1'; \
+    } > /usr/local/etc/php/conf.d/opcache-recommended.ini
+
+RUN usermod -u ${UID} www-data && \
+    groupmod -g ${GID} www-data
+
+RUN ln -sf /usr/share/zoneinfo/${TIMEZONE} /etc/localtime
+
+RUN chown -R www-data:www-data /var/www/html
+
+USER www-data
+
+WORKDIR /var/www/html
+
+EXPOSE 9000
+
+CMD ["php-fpm"]
